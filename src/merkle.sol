@@ -47,10 +47,13 @@ contract MerkleVerifier {
      
     function verify(bytes32[] memory proof, bytes32[] memory matches, uint len, bytes32 leaf) public returns (bytes32[] memory, uint) {
         bytes32 res = leaf;
-        
+        if (find(matches, res)) {
+            return (matches, len);
+        }
         for (uint256 i = 0; i < proof.length; i++) {
             bytes32 elem = proof[i];
-
+            matches[len] = elem;
+            len++;
             if (res < elem) {
                 res = sha256(abi.encodePacked(res, elem));
             } else {

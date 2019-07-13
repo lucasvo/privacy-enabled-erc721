@@ -53,17 +53,15 @@ contract MerkleTest is DSTest  {
         uint len = 1;
 
         (matches, len) = merkle.verify(proof, matches, len, leaf1); 
-        assertEq(len, 2);
+        assertEq(len, 4);
 
         proof[0] = leaf4;
-        proof[1] = parent1;
         (matches, len) = merkle.verify(proof, matches, len, leaf3);
-        assertEq(len, 3);
+        assertEq(len, 5);
 
         proof[0] = leaf1;
-        proof[1] = parent2;
         (matches, len) = merkle.verify(proof, matches, len, leaf2);
-        assertEq(len, 3);
+        assertEq(len, 5);
     }
 
     function testFind() public {

@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 pragma solidity >=0.4.23;
+pragma experimental ABIEncoderV2;
 
 import "ds-test/test.sol";
 import "../nft.sol";
@@ -43,7 +44,17 @@ contract TestNFT is NFT {
     function checkAnchor(uint anchor, bytes32 droot, bytes32 sigs) public returns (bool) {
         return _checkAnchor(anchor, droot, sigs); 
     }
-    function mint(address usr, uint tkn) public {
+    function mint(address usr, uint tkn, uint anchor, bytes32 droot, bytes32 sigs, bytes32[3] memory values, bytes32[][] memory proofs, uint len) public {
+        checkAnchor(anchor, droot, sigs);
+
+        bytes32[] memory matches = new bytes32[](len);
+        matches[0] = droot;
+        uint len2 = len;
+        uint len = 1;
+
+        (matches, len) = verify(proofs[0], matches, len, values[0]);
+        (matches, len) = verify(proofs[1], matches, len, values[1]);
+        (matches, len) = verify(proofs[2], matches, len, values[2]);
         _mint(usr, tkn);
     }
 } 
@@ -62,6 +73,14 @@ contract NFTTest is DSTest  {
         anchors = new AnchorMock();
         nft = new TestNFT("test", "TEST", address(anchors));
     }
+    
+    function hash(bytes32 a, bytes32 b) public view returns (bytes32) {
+            if (a < b) {
+                return sha256(abi.encodePacked(a, b));
+            } else {
+                return sha256(abi.encodePacked(b, a));
+            }
+    }
 
     function testAnchor() public logs_gas {
         bytes32 sigs = 0x5d9215ea8ea2c12bcc724d9690de0801a1b9658014c29c2a26d3b89eaa65cd07;
@@ -70,11 +89,34 @@ contract NFTTest is DSTest  {
 
         // Setting AnchorMock to return a given root
         anchors.file(root, 0); 
-       
+          
         assertTrue(nft.checkAnchor(0, data_root, sigs));
     }
+
     function testMint() public logs_gas {
-        nft.mint(address(usr1), 1);
+        bytes32 leaf1 = sha256("1");
+        bytes32 leaf2 = sha256("2");
+        bytes32 leaf3 = sha256("3");
+        bytes32 leaf4 = sha256("4");
+
+        bytes32 parent1 = hash(leaf1, leaf2); 
+        bytes32 parent2 = hash(leaf3, leaf4);
+        bytes32 data_root = hash(parent1, parent2);
+        bytes32 sigs = sha256("sigs");
+        bytes32 root = hash(data_root, sigs);
+
+        anchors.file(root, 0); 
+
+        bytes32[3] memory values = [leaf1, leaf2, leaf3];
+        bytes32[][] memory proofs = new bytes32[][](3);
+        proofs[0] = new bytes32[](2);
+        proofs[0][0] = leaf2;
+        proofs[0][1] = parent2;
+        proofs[1] = new bytes32[](0);
+        proofs[2] = new bytes32[](1);
+        proofs[2][0] = leaf4;
+
+        nft.mint(address(usr1), 1, 1, data_root, sigs, values, proofs, 5);
         assertEq(nft.ownerOf(1), address(usr1));
     }
 
