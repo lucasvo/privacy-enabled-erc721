@@ -16,6 +16,24 @@
 pragma solidity >=0.4.24;
 
 
+// This is an optimized Merkle proof checker. It caches all valid leaves in an array called
+// matches. If a proof is validated, all the intermediate hashes will be added to the array.
+// When validating a subsequent proof, that proof will stop being validated as soon as a hash 
+// has been computed that has been a computed hash in a previously validated proof.
+//
+// When submitting a list of proof, the client can thus choose to chop of all the already proven
+// nodes when submitting multiple proofs.
+//
+// matches: matches must be initialized with length = sum of all proof hashes to ensure all 
+//          computed hashes can be stored.
+//
+// len:     is a pointer that points to the first non-empty element in the matches array.
+//          Solidity unfortunately has no internal count.
+//  
+// In the first call to verify(), you should pass in the matches containing exactly one hash,
+// the Merkle root and len should be 1. For any subsequent call, the return values from the 
+// previous call to verify should be used.
+//
 contract MerkleVerifier {
     uint constant hashLength = 512;
     function find(bytes32[] memory values, bytes32 value) public pure returns (bool) {
