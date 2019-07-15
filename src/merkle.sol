@@ -36,7 +36,7 @@ pragma solidity >=0.4.24;
 //
 contract MerkleVerifier {
     uint constant hashLength = 512;
-    function find(bytes32[] memory values, bytes32 value) public pure returns (bool) {
+    function find(bytes32[] memory values, bytes32 value) internal pure returns (bool) {
         for (uint i=0; i < values.length; i++) {
             if (values[i] == value) {
                 return true;
@@ -45,7 +45,7 @@ contract MerkleVerifier {
         return false;
     }
      
-    function verify(bytes32[] memory proof, bytes32[] memory matches, uint len, bytes32 leaf) public returns (bytes32[] memory, uint) {
+    function verify(bytes32[] memory proof, bytes32[] memory matches, uint len, bytes32 leaf) internal returns (bytes32[] memory, uint) {
         bytes32 res = leaf;
         if (find(matches, res)) {
             return (matches, len);
@@ -65,6 +65,31 @@ contract MerkleVerifier {
             matches[len] = res;
             len++;
         }
-        revert("invalid-matches");
+        // special case, int==proof validation failed
+        return (matches, 0);
     }
+
+    function verify(bytes32[][] memory proofs, bytes32[] memory matches, uint len, bytes32[] memory leafs) internal returns (bool) {
+        require(len>0);
+        for (uint256 i = 0; i < proofs.length; i++) {
+            (matches, len) = verify(proofs[i], matches, len, leafs[i]);
+            if (len == 0) {
+                return false;
+            }
+        }
+        return true;
+    } 
+
+    function verify(bytes32[][] memory proofs, bytes32 root, bytes32[] memory leafs) internal returns (bool) {
+        uint len = 0;
+        for (uint256 i = 0; i< proofs.length; i++) {
+            len += proofs[i].length;
+        }
+        bytes32[] memory matches = new bytes32[](len*2);
+        matches[0] = root;
+        len = 1;
+
+        return verify(proofs, matches, len, leafs);
+    }
+
 }

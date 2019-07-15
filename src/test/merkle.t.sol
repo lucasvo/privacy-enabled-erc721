@@ -19,13 +19,7 @@ import "ds-test/test.sol";
 import "../merkle.sol";
 
 
-contract MerkleTest is DSTest  {
-    MerkleVerifier merkle;
-
-    function setUp() public {
-        merkle = new MerkleVerifier(); 
-    }
-
+contract MerkleTest is DSTest, MerkleVerifier {
     function hash(bytes32 a, bytes32 b) public view returns (bytes32) {
             if (a < b) {
                 return sha256(abi.encodePacked(a, b));
@@ -46,27 +40,43 @@ contract MerkleTest is DSTest  {
 
         bytes32[] memory matches = new bytes32[](10);
         matches[0] = root; 
+        uint len = 1;
+        bytes32[][] memory proofs = new bytes32[][](3); 
         
         bytes32[] memory proof = new bytes32[](2);
         proof[0] = leaf2;
         proof[1] = parent2;
-        uint len = 1;
-
-        (matches, len) = merkle.verify(proof, matches, len, leaf1); 
+       
+        proofs[0] = proof;
+        (matches, len) = verify(proof, matches, len, leaf1); 
         assertEq(len, 4);
 
+        proof = new bytes32[](1);
         proof[0] = leaf4;
-        (matches, len) = merkle.verify(proof, matches, len, leaf3);
+        proofs[1] = proof;
+        (matches, len) = verify(proof, matches, len, leaf3);
         assertEq(len, 5);
 
+        proof = new bytes32[](1);
         proof[0] = leaf1;
-        (matches, len) = merkle.verify(proof, matches, len, leaf2);
+        proofs[2] = proof;
+        (matches, len) = verify(proof, matches, len, leaf2);
         assertEq(len, 5);
+        
+        matches = new bytes32[](10);
+        matches[0] = root;
+        len = 1;
+        bytes32[] memory leafs = new bytes32[](3);
+        leafs[0] = leaf1;
+        leafs[1] = leaf3;
+        leafs[2] = leaf2;
+        require(verify(proofs, matches, len, leafs));
+        require(verify(proofs, root, leafs));
     }
 
     function testFind() public {
         bytes32[] memory matches = new bytes32[](512);
         matches[0] = "0";
-        assertTrue(merkle.find(matches, "0"));
+        assertTrue(find(matches, "0"));
     }
 }
