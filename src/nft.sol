@@ -98,6 +98,14 @@ contract NFT is ERC721Metadata, MerkleVerifier {
         }
     }
 
+  /**
+   * @dev Checks that provided document is signed by the given identity
+   * and validates and checks if the public key used is a valid SIGNING_KEY.
+   * Does not check if the signature root is part of the document root.
+   * @param anchored_block uint32 block number for when the document root was anchored
+   * @param data_root bytes32 hash of all invoice fields which is signed
+   * @param signature bytes The signature used to contract the property for precise proofs
+   */
     function _requireSignedByIdentity(uint32 anchored_block, bytes32 data_root, bytes memory signature) internal returns (bool) {
 
         // Extract the public key from the signature
@@ -113,7 +121,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     "Signature key is not valid."
     );
 
-    // If key is revoked anchor must be older the the key revocation
+    // If key is revoked, anchor must be older the the key revocation
     (, , uint32 revokedAt_) = identity.getKey(pbKey_);
     if (revokedAt_ > 0) {
       require(
@@ -123,6 +131,11 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     }
     }
 
+  /**
+   * @dev Mints a token to a specified address
+   * @param usr address deposit address of token
+   * @param tkn uint tokenID
+   */
     function _mint(address usr, uint tkn) internal {
         super._mint(usr, tkn);
         emit Minted(usr, tkn);
