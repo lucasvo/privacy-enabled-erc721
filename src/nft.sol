@@ -15,18 +15,23 @@
 
 pragma solidity >=0.4.24;
 
-import { ERC721Enumerable } from "./openzeppelin-solidity/token/ERC721/ERC721Enumerable.sol";
 import { ERC721Metadata } from "./openzeppelin-solidity/token/ERC721/ERC721Metadata.sol";
 import "./ECDSA.sol";
+import "./Utilities.sol";
 import "./merkle.sol";
 
 contract AnchorLike {
-    function getAnchorById(uint) public returns (uint, bytes32, uint32);
+    function getAnchorById(uint) public view returns (uint, bytes32, uint32);
 }
 
-contract IdentityLike {
-    function keyHasPurpose(bytes32, uint256) public returns (bool);
-    function getKey(bytes32) public returns (bytes32, uint256[] memory, uint32);
+contract KeyManagerLike {
+    function keyHasPurpose(bytes32, uint256) public view returns (bool);
+    function getKey(bytes32) public view returns (bytes32, uint256[] memory, uint32);
+}
+
+contract IdentityFactoryLike {
+    mapping(address => bool) internal _identities;
+    function createdIdentity(address) public view returns (bool);
 }
 
 contract NFT is ERC721Metadata, MerkleVerifier {
@@ -34,11 +39,12 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     using ECDSA for bytes32;
 
     // --- Data ---
-    IdentityLike public         identity;
+    KeyManagerLike public       key_manager;
     AnchorLike public           anchors;
-    bytes32 public              ratings;
-    string public               uri_prefix;
+    IdentityFactoryLike public  identity_factory;
 
+    // Base for constructing dynamic metadata token URIS
+    // the token uri also contains the registry address. uri + contract address + tokenId
     string public uri;
 
     // --- Compact Properties ---
@@ -46,15 +52,18 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     bytes constant internal SIGNATURE_TREE_SIGNATURES = hex"0300000000000001";
     // compact prop for "signature" for a signature tree signature
     bytes constant internal SIGNATURE_TREE_SIGNATURES_SIGNATURE = hex"00000004";
-
+    // compact prop for "next_version"
+    bytes constant internal NEXT_VERSION = hex"0100000000000004";
+    // compact prop from "nfts"
+    bytes constant internal NFTS = hex"0100000000000014";
     // Value of the Signature purpose for an identity. sha256('CENTRIFUGE@SIGNING')
     // solium-disable-next-line
     uint256 constant internal SIGNING_PURPOSE = 0x774a43710604e3ce8db630136980a6ba5a65b5e6686ee51009ed5f3fded6ea7e;
 
-
-    constructor (string memory name, string memory symbol, address anchors_, address identity_) ERC721Metadata(name, symbol) public {
+    constructor (string memory name, string memory symbol, address anchors_, address identity_, address identity_factory_) ERC721Metadata(name, symbol) public {
         anchors = AnchorLike(anchors_);
-        identity = IdentityLike(identity_);
+        key_manager = KeyManagerLike(identity_);
+        identity_factory = IdentityFactoryLike(identity_factory_);
     }
 
     event Minted(address usr, uint tkn);
@@ -99,6 +108,75 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     }
 
   /**
+   * @dev Returns an URI for a given token ID
+   * the Uri is constructed dynamic based. _tokenUriBase + contract address + tokenId
+   * Throws if the token ID does not exist. May return an empty string.
+   * @param token_id uint256 ID of the token to query
+   */
+	  function tokenURI(
+		  uint256 token_id
+	  )
+	  external
+	  view
+	  returns (
+		  string memory
+	  )
+	  {
+		  return string(
+			  abi.encodePacked(
+				  uri,
+				  "0x",
+				  Utilities.uintToHexStr(uint256(address(this))),
+				  "/0x",
+				  Utilities.uintToHexStr(token_id)
+			  )
+		  );
+	  }
+
+  /**
+   * @dev Checks if the provided next id is part of the
+   * document root and the document is the latest version anchored
+   * @param data_root bytes32 hash of all invoice fields which is signed
+   * @param next_anchor_id uint256 the next id to be anchored
+   * @param salt bytes32 salt for leaf construction
+   * @param proof bytes32[][] proofs for leaf construction
+   */
+  function _requireIsLatestDocumentVersion(
+    bytes32 data_root,
+    uint256 next_anchor_id,
+    bytes32 salt,
+    bytes32[][] memory proof
+  )
+  internal
+  view
+  {
+    (, bytes32 next_merkle_root_, ) = anchors.getAnchorById(next_anchor_id);
+
+    require(
+      next_merkle_root_ == 0x0,
+      "Document has a newer version on chain"
+    );
+
+    bytes32[] memory leaf = new bytes32[](1);
+    leaf[0] = sha256(
+        abi.encodePacked(
+          NEXT_VERSION,
+          next_anchor_id,
+          salt
+        )
+      );
+
+    require(
+      verify(
+        proof,
+        data_root,
+        leaf
+      ),
+      "Next version proof is not valid"
+    );
+  }
+
+  /**
    * @dev Checks that provided document is signed by the given identity
    * and validates and checks if the public key used is a valid SIGNING_KEY.
    * Does not check if the signature root is part of the document root.
@@ -106,30 +184,70 @@ contract NFT is ERC721Metadata, MerkleVerifier {
    * @param data_root bytes32 hash of all invoice fields which is signed
    * @param signature bytes The signature used to contract the property for precise proofs
    */
-    function _requireSignedByIdentity(uint32 anchored_block, bytes32 data_root, bytes memory signature) internal returns (bool) {
+    function _requireSignedByIdentity(uint32 anchored_block, bytes32 data_root, bytes memory signature) internal view returns (bool) {
 
-        // Extract the public key from the signature
-    bytes32 pbKey_ = bytes32(
-      uint256(
-        data_root.toEthSignedMessageHash().recover(signature)
-      )
-    );
-
-    // check that public key has signature purpose on provided identity
-    require(
-    identity.keyHasPurpose(pbKey_, SIGNING_PURPOSE),
-    "Signature key is not valid."
-    );
-
-    // If key is revoked, anchor must be older the the key revocation
-    (, , uint32 revokedAt_) = identity.getKey(pbKey_);
-    if (revokedAt_ > 0) {
-      require(
-        anchored_block < revokedAt_,
-        "Document signed with a revoked key"
+      // Extract the public key and identity address from the signature
+      address identity_ = data_root.toEthSignedMessageHash().recover(signature);
+      bytes32 pbKey_ = bytes32(
+      uint256(identity_)
       );
+
+      // check that the identity being used has been created by the Centrifuge Identity Factory contract
+      bool valid = identity_factory.createdIdentity(identity_);
+      require(valid, "Identity is not registered.");
+
+      // check that public key has signature purpose on provided identity
+      require(
+        key_manager.keyHasPurpose(pbKey_, SIGNING_PURPOSE),
+        "Signature key is not valid."
+      );
+
+      // If key is revoked, anchor must be older the the key revocation
+      (, , uint32 revokedAt_) = key_manager.getKey(pbKey_);
+      if (revokedAt_ > 0) {
+        require(
+          anchored_block < revokedAt_,
+          "Document signed with a revoked key."
+        );
+      }
     }
-    }
+
+  /**
+   * @dev Checks that the document has no other token
+   * minted in this registry for the provided document
+   * @param data_root bytes32 hash of all invoice fields which is signed
+   * @param tokenId uint256 The ID for the token to be minted
+   * @param salt bytes32 salt for leaf construction
+   * @param proof bytes32[][] proofs for leaf construction
+   */
+	  function _requireTokenUniqueness(
+	    bytes32 data_root,
+	    uint256 tokenId,
+	    bytes32 salt,
+	    bytes32[][] memory proof
+ 	  )
+	  internal
+		view
+	  {
+		  // Reconstruct the property
+		  // the property format: nfts[registryAddress]
+	    bytes memory property_ = abi.encodePacked(
+	    NFTS,
+	    address(this),
+	    hex"000000000000000000000000"
+	    );
+
+      bytes32[] memory leaf = new bytes32[](1);
+		  leaf[0] = sha256(abi.encodePacked(property_, tokenId, salt));
+	    require(
+	      verify(
+	      proof,
+	      data_root,
+        leaf
+	    ),
+	    "Token uniqueness proof is not valid"
+	    );
+	  }
 
   /**
    * @dev Mints a token to a specified address

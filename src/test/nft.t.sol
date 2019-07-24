@@ -38,7 +38,7 @@ contract AnchorMock {
     }
 }
 
-contract IdentityMock {
+contract KeyManagerMock {
     bytes32 key;
     bytes32 value;
     uint256 purpose;
@@ -49,12 +49,20 @@ contract IdentityMock {
     }
 
     function getKey(bytes32 value_) public returns (bytes32, uint256[] memory, uint32) {
-      return (value, mem, uint32(0));
+        return (value, mem, uint32(0));
+    }
+}
+
+contract IDFactoryMock {
+    address identity;
+
+    function createdIdentity(address identity_) public returns (bool) {
+        return true;
     }
 }
 
 contract TestNFT is NFT {
-    constructor (address anchors_, address identity_) NFT("Test NFT", "TNFT", anchors_, identity_) public {
+    constructor (address anchors_, address key_manager_, address identity_factory_) NFT("Test NFT", "TNFT", anchors_, key_manager_, identity_factory_) public {
     }
 
     function checkAnchor(uint anchor, bytes32 droot, bytes32 sigs) public returns (bool) {
@@ -79,8 +87,9 @@ contract NFTTest is DSTest {
     TestNFT         nft;
     address         self;
     User            usr1;
-    IdentityMock    identity;
+    KeyManagerMock  key_manager;
     AnchorMock      anchors;
+    IDFactoryMock   identity_factory;
     bytes[]         properties;
     bytes[]         values;
     bytes32[]       salts;
@@ -93,7 +102,9 @@ contract NFTTest is DSTest {
         self = address(this);
         usr1 = new User();
         anchors = new AnchorMock();
-        nft = new TestNFT(address(anchors), address(identity));
+        key_manager = new KeyManagerMock();
+        identity_factory = new IDFactoryMock();
+        nft = new TestNFT(address(anchors), address(key_manager), address(identity_factory));
 
         // set up a bunch of values
         sigs = 0xab3a51423550a6ac6a5ae3b07438fe4a16a7ebe3119352200a348af581b83d5c;
