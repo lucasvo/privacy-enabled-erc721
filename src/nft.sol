@@ -97,13 +97,13 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     }
 
     // --- NFT ---
-    function _checkAnchor(uint anchor, bytes32 droot, bytes32 sigs) internal returns (bool) {
-        bytes32 root;
-        (, root, ) = anchors.getAnchorById(anchor);
-        if (droot < sigs) {
-            return root == sha256(concat(droot, sigs));
+    function _checkAnchor(uint anchor, bytes32 data_root, bytes32 sigs) internal view returns (bool) {
+        bytes32 doc_root;
+        (, doc_root, ) = anchors.getAnchorById(anchor);
+        if (data_root < sigs) {
+            return doc_root == sha256(concat(data_root, sigs));
         } else {
-            return root == sha256(concat(sigs, droot));
+            return doc_root == sha256(concat(sigs, data_root));
         }
     }
 
