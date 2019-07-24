@@ -1,12 +1,3 @@
 [submodule "lib/ds-test"]
 	path = lib/ds-test
 	url = https://github.com/dapphub/ds-test
-[submodule "lib/openzeppelin-eth"]
-	path = lib/openzeppelin-eth
-	url = https://github.com/openzeppelin/openzeppelin-eth
-[submodule "src/lib/centrifuge-ethereum-contracts"]
-	path = src/lib/centrifuge-ethereum-contracts
-	url = https://github.com/centrifuge/centrifuge-ethereum-contracts
-[submodule "lib/centrifuge-ethereum-contracts"]
-	path = lib/centrifuge-ethereum-contracts
-	url = https://github.com/centrifuge/centrifuge-ethereum-contracts
