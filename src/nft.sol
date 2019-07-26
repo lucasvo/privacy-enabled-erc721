@@ -47,10 +47,6 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     string public uri;
 
     // --- Compact Properties ---
-    // compact prop for "signatures_tree.signatures"
-    bytes constant internal SIGNATURE_TREE_SIGNATURES = hex"0300000000000001";
-    // compact prop for "signature" for a signature tree signature
-    bytes constant internal SIGNATURE_TREE_SIGNATURES_SIGNATURE = hex"00000004";
     // compact prop for "next_version"
     bytes constant internal NEXT_VERSION = hex"0100000000000004";
     // compact prop from "nfts"
@@ -65,7 +61,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
         identity_factory = IdentityFactoryLike(identity_factory_);
     }
 
-    event Minted(address usr, uint tkn);
+    event Minted(address usr, uint256 tkn);
 
     // --- Utils ---
     function concat(bytes32 b1, bytes32 b2) pure internal returns (bytes memory)
@@ -119,22 +115,13 @@ contract NFT is ERC721Metadata, MerkleVerifier {
 
      /**
       * @dev Parses bytes and extracts a uint256 value
-      * @param payload bytes From where to extract the index
+      * @param data bytes From where to extract the index
       * @return result the converted address
       */
-     function bytesToUint(
-       bytes memory payload
-     )
-     internal
-     pure
-     returns (
-       uint256 result
-     )
+     function bytesToUint256(bytes memory data) internal pure returns (uint256)
      {
-       // solium-disable-next-line security/no-inline-assembly
-       assembly {
-         result := mload(add(payload, 0x20))
-       }
+    	 require(data.length <= 256, "slicing out of range");
+			 return abi.decode(data, (uint256));
      }
 
      /**
@@ -177,13 +164,13 @@ contract NFT is ERC721Metadata, MerkleVerifier {
      }
 
     // --- NFT ---
-    function _checkAnchor(uint anchor, bytes32 data_root, bytes32 sigs) internal view returns (bool) {
+    function _checkAnchor(uint anchor, bytes32 data_root, bytes32 sig_root) internal view returns (bool) {
         bytes32 doc_root;
         (, doc_root, ) = anchors.getAnchorById(anchor);
-        if (data_root < sigs) {
-            return doc_root == sha256(concat(data_root, sigs));
+        if (data_root < sig_root) {
+           return doc_root == sha256(concat(data_root, sig_root));
         } else {
-            return doc_root == sha256(concat(sigs, data_root));
+           return doc_root == sha256(concat(sig_root, data_root));
         }
     }
 
@@ -193,148 +180,72 @@ contract NFT is ERC721Metadata, MerkleVerifier {
    * Throws if the token ID does not exist. May return an empty string.
    * @param token_id uint256 ID of the token to query
    */
-	  function tokenURI(
-		  uint256 token_id
-	  )
-	  external
-	  view
-	  returns (
-		  string memory
-	  )
-	  {
+	  function tokenURI( uint256 token_id) external view returns (string memory) {
 		  return string(
-			  abi.encodePacked(
-				  uri,
-				  "0x",
-				  uintToHexStr(uint256(address(this))),
-				  "/0x",
-				  uintToHexStr(token_id)
-			  )
+			  abi.encodePacked(uri, "0x", uintToHexStr(uint256(address(this))), "/0x", uintToHexStr(token_id))
 		  );
 	  }
 
   /**
-   * @dev Checks if the provided next id is part of the
-   * document root and the document is the latest version anchored
+   * @dev Checks if the document is the latest version anchored
    * @param data_root bytes32 hash of all invoice fields which is signed
    * @param next_anchor_id uint256 the next id to be anchored
-   * @param salt bytes32 salt for leaf construction
-   * @param proof bytes32[][] proofs for leaf construction
    */
-  function _requireIsLatestDocumentVersion(
-    bytes32 data_root,
-    uint256 next_anchor_id,
-    bytes32 salt,
-    bytes32[][] memory proof
-  )
-  internal
-  view
-  {
+  function _latestDoc( bytes32 data_root, uint256 next_anchor_id)  internal view returns (bool) {
     (, bytes32 next_merkle_root_, ) = anchors.getAnchorById(next_anchor_id);
-
-    require(
-      next_merkle_root_ == 0x0,
-      "Document has a newer version on chain"
-    );
-
-    bytes32[] memory leaf = new bytes32[](1);
-    leaf[0] = sha256(
-        abi.encodePacked(
-          NEXT_VERSION,
-          next_anchor_id,
-          salt
-        )
-      );
-
-    require(
-      verify(
-        proof,
-        data_root,
-        leaf
-      ),
-      "Next version proof is not valid"
-    );
+    return next_merkle_root_ == 0x0;
   }
 
   /**
    * @dev Checks that provided document is signed by the given identity
    * and validates and checks if the public key used is a valid SIGNING_KEY.
    * Does not check if the signature root is part of the document root.
-   * @param anchored_block uint32 block number for when the document root was anchored
+   * @param anchor uint256 anchor ID
    * @param data_root bytes32 hash of all invoice fields which is signed
    * @param signature bytes The signature used to contract the property for precise proofs
    */
-    function _requireSignedByIdentity(uint32 anchored_block, bytes32 data_root, bytes memory signature) internal view returns (bool) {
+    function _signed(uint256 anchor, bytes32 data_root, bytes memory signature) internal view {
 
+      // Get anchored block from anchor ID
+    (, , uint32 anchored_block) = anchors.getAnchorById(anchor);
       // Extract the public key and identity address from the signature
       address identity_ = data_root.toEthSignedMessageHash().recover(signature);
-      bytes32 pbKey_ = bytes32(
-      uint256(identity_)
-      );
+      bytes32 pbKey_ = bytes32(uint256(identity_) << 96);
 
       // check that the identity being used has been created by the Centrifuge Identity Factory contract
-      bool valid = identity_factory.createdIdentity(identity_);
-      require(valid, "Identity is not registered.");
+			require(identity_factory.createdIdentity(identity_), "Identity is not registered.");
 
       // check that public key has signature purpose on provided identity
-      require(
-        key_manager.keyHasPurpose(pbKey_, SIGNING_PURPOSE),
-        "Signature key is not valid."
-      );
+			require(
+				key_manager.keyHasPurpose(pbKey_, SIGNING_PURPOSE),
+				"Signature key is not valid."
+			);
 
       // If key is revoked, anchor must be older the the key revocation
-      (, , uint32 revokedAt_) = key_manager.getKey(pbKey_);
-      if (revokedAt_ > 0) {
-        require(
-          anchored_block < revokedAt_,
-          "Document signed with a revoked key."
-        );
-      }
+			(, , uint32 revokedAt_) = key_manager.getKey(pbKey_);
+			if (revokedAt_ > 0) {
+				require(anchored_block < revokedAt_,"Document signed with a revoked key.");
+			}
     }
 
   /**
-   * @dev Checks that the document has no other token
-   * minted in this registry for the provided document
-   * @param data_root bytes32 hash of all invoice fields which is signed
-   * @param tokenId uint256 The ID for the token to be minted
-   * @param salt bytes32 salt for leaf construction
-   * @param proof bytes32[][] proofs for leaf construction
+   * @dev Checks that the passed in token proof matches the data for minting
+   * @param tkn uint256 The ID for the token to be minted
+   * @param property bytes
+   * @param value bytes
    */
-	  function _requireTokenUniqueness(
-	    bytes32 data_root,
-	    uint256 tokenId,
-	    bytes32 salt,
-	    bytes32[][] memory proof
- 	  )
-	  internal
-		view
-	  {
-		  // Reconstruct the property
-		  // the property format: nfts[registryAddress]
-	    bytes memory property_ = abi.encodePacked(
-	    NFTS,
-	    address(this),
-	    hex"000000000000000000000000"
-	    );
-
-      bytes32[] memory leaf = new bytes32[](1);
-		  leaf[0] = sha256(abi.encodePacked(property_, tokenId, salt));
-	    require(
-	      verify(
-	      proof,
-	      data_root,
-        leaf
-	    ),
-	    "Token uniqueness proof is not valid"
-	    );
+	  function _tokenData(uint256 tkn, bytes memory property, bytes memory value)
+	  internal view {
+      require(bytesToUint256(value) == tkn, "Passed in token ID does not match proof.");
+			//require(sha256(property) == sha256(abi.encodePacked(NFTS, address(this), hex"000000000000000000000000")));
 	  }
 
   /**
    * @dev Mints a token to a specified address
    * @param usr address deposit address of token
-   * @param tkn uint tokenID
+   * @param tkn uint256 tokenID
    */
-    function _mint(address usr, uint tkn) internal {
+    function _mint(address usr, uint256 tkn) internal {
         super._mint(usr, tkn);
         emit Minted(usr, tkn);
     }
