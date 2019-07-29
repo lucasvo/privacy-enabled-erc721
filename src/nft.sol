@@ -163,6 +163,19 @@ contract NFT is ERC721Metadata, MerkleVerifier {
        return string(result);
      }
 
+		function equalBytes(bytes memory a, bytes memory b) internal pure returns (bool) {
+				if (a.length == b.length) {
+						for (uint i = 0; i < a.length; i++) {
+								if (a[i] != b[i]) {
+                    return false;
+								}
+						}
+				} else {
+			      return false;
+				}
+        return true;
+    }
+
     // --- NFT ---
     function _checkAnchor(uint anchor, bytes32 data_root, bytes32 sig_root) internal view returns (bool) {
         bytes32 doc_root;
@@ -234,11 +247,10 @@ contract NFT is ERC721Metadata, MerkleVerifier {
    * @param property bytes
    * @param value bytes
    */
-	  function _tokenData(uint256 tkn, bytes memory property, bytes memory value)
-	  internal view {
+	  function _tokenData(uint256 tkn, bytes memory property, bytes memory value) internal view returns (bool) {
       require(bytesToUint256(value) == tkn, "Passed in token ID does not match proof.");
-			//require(sha256(property) == sha256(abi.encodePacked(NFTS, address(this), hex"000000000000000000000000")));
-	  }
+			return equalBytes(property, abi.encodePacked(NFTS, address(this), hex"000000000000000000000000"));
+    }
 
   /**
    * @dev Mints a token to a specified address

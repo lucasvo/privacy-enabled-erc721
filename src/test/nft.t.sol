@@ -20,8 +20,6 @@ import "ds-test/test.sol";
 import "../nft.sol";
 
 contract User {
-    function doMint(address registry, address usr) public {
-    }
 }
 
 contract AnchorMock {
@@ -88,6 +86,9 @@ contract TestNFT is NFT, DSTest {
         return bytesToUint256(data);
     }
 
+    function _equalBytes(bytes memory a, bytes memory b) public pure returns (bool) {
+        return equalBytes(a, b);
+}
 
     // --- Mint Method ---
     function mint(address usr, uint256 tkn, uint256 anchor, bytes32 data_root, bytes32 signatures_root, bytes memory signature, bytes[] memory properties, bytes[] memory values, bytes32[] memory salts, bytes32[][] memory proofs) public {
@@ -101,7 +102,8 @@ contract TestNFT is NFT, DSTest {
 
       require(verify(proofs, data_root, leaves), "Validation of proofs failed.");
       require(_latestDoc(data_root, _bytesToUint(values[4])), "Document is not the latest version.");
-			_tokenData(tkn, properties[3], values[3]);
+			//require(_tokenData(tkn, properties[3], values[3]), "Invalid token data");
+		  assertTrue(_tokenData(tkn, properties[3], values[3]));
       _signed(0, data_root, signature);
       _mint(usr, tkn);
     }
@@ -109,7 +111,6 @@ contract TestNFT is NFT, DSTest {
 
 contract NFTTest is DSTest {
     TestNFT         nft;
-    address         self;
     User            usr1;
     KeyManagerMock  key_manager;
     AnchorMock      anchors;
@@ -126,7 +127,6 @@ contract NFTTest is DSTest {
     bytes32         root;
 
     function setUp() public {
-        self = address(this);
         usr1 = new User();
         anchors = new AnchorMock();
         key_manager = new KeyManagerMock();
