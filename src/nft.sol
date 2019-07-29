@@ -49,7 +49,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     // --- Compact Properties ---
     // compact prop for "next_version"
     bytes constant internal NEXT_VERSION = hex"0100000000000004";
-    // compact prop from "nfts"
+    // compact prop for "nfts"
     bytes constant internal NFTS = hex"0100000000000014";
     // Value of the Signature purpose for an identity. sha256('CENTRIFUGE@SIGNING')
     // solium-disable-next-line
@@ -78,9 +78,13 @@ contract NFT is ERC721Metadata, MerkleVerifier {
       * @param data bytes From where to extract the index
       * @return result the converted address
       */
-     function bytesToUint(bytes memory data) internal pure returns (uint) {
-    	 require(data.length <= 256, "slicing out of range");
-         return abi.decode(data, (uint));
+    function bytesToUint(bytes memory data) internal pure returns (uint) {
+        require(data.length <= 256, "slicing out of range");
+        uint x;
+        assembly {
+            x := mload(add(data, add(0x20, 0)))
+        }
+        return x;
      }
 
      /**
@@ -119,12 +123,11 @@ contract NFT is ERC721Metadata, MerkleVerifier {
             for (uint i = 0; i < a.length; i++) {
                 if (a[i] != b[i]) {
                     return false;
-                } else {
-                    return false;
                 }
-                return true;
             }
+            return true;
         }
+        return false;
     }
 
     // --- NFT ---
@@ -182,8 +185,10 @@ contract NFT is ERC721Metadata, MerkleVerifier {
    * @param tkn uint The ID for the token to be minted
    */
     function _tokenData(uint tkn, bytes memory property, bytes memory value) internal view returns (bool) {
-      require(bytesToUint(value) == tkn, "Passed in token ID does not match proof.");
-      return equalBytes(property, abi.encodePacked(NFTS, address(this), hex"000000000000000000000000"));
+      if (bytesToUint(value) != tkn) {
+         return true;
+      }
+      return equalBytes(property, abi.encodePacked(hex"0100000000000014", address(this), hex"000000000000000000000000"));
     }
 
   /**
