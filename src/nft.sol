@@ -16,7 +16,7 @@
 pragma solidity >=0.4.24;
 
 import { ERC721Metadata } from "./openzeppelin-solidity/token/ERC721/ERC721Metadata.sol";
-import "./ECDSA.sol";
+import "./openzeppelin-solidity/cryptography/ECDSA.sol";
 import "./merkle.sol";
 
 contract AnchorLike {
@@ -64,8 +64,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     event Minted(address usr, uint256 tkn);
 
     // --- Utils ---
-    function concat(bytes32 b1, bytes32 b2) pure internal returns (bytes memory)
-    {
+    function concat(bytes32 b1, bytes32 b2) pure internal returns (bytes memory) {
         bytes memory result = new bytes(64);
         assembly {
             mstore(add(result, 32), b1)
@@ -74,52 +73,12 @@ contract NFT is ERC721Metadata, MerkleVerifier {
         return result;
     }
 
-    function uint2str(uint i) internal pure returns (string memory) {
-        if (i == 0) return "0";
-        uint j = i;
-        uint length;
-        while (j != 0){
-            length++;
-            j /= 10;
-        }
-        bytes memory bstr = new bytes(length);
-        uint k = length - 1;
-        while (i != 0){
-            bstr[k--] = byte(uint8(48 + i % 10));
-            i /= 10;
-        }
-        return string(bstr);
-    }
-    /**
-    * @dev Parses bytes and extracts a bytes8 value from
-    * the given starting point
-    * @param payload bytes From where to extract the index
-    * @param startFrom uint256 where to start from
-    * @return bytes8 the index found, it defaults to 0x00000000000000
-    */
-     function extractIndex(
-       bytes memory payload,
-       uint256 startFrom
-     )
-     internal
-     pure
-     returns (
-       bytes8 index
-     )
-     {
-       // solium-disable-next-line security/no-inline-assembly
-       assembly {
-         index := mload(add(add(payload, 0x20), startFrom))
-       }
-     }
-
      /**
       * @dev Parses bytes and extracts a uint256 value
       * @param data bytes From where to extract the index
       * @return result the converted address
       */
-     function bytesToUint256(bytes memory data) internal pure returns (uint256)
-     {
+     function bytesToUint256(bytes memory data) internal pure returns (uint256) {
     	 require(data.length <= 256, "slicing out of range");
 			 return abi.decode(data, (uint256));
      }
@@ -129,15 +88,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
       * @param payload uint
       * @return string the corresponding hex string
       */
-     function uintToHexStr(
-       uint payload
-     )
-     internal
-     pure
-     returns (
-       string memory
-     )
-     {
+     function uintToHexStr(uint payload) internal pure returns (string memory) {
        if (payload == 0)
          return "0";
        // calculate string length
@@ -187,12 +138,6 @@ contract NFT is ERC721Metadata, MerkleVerifier {
         }
     }
 
-  /**
-   * @dev Returns an URI for a given token ID
-   * the Uri is constructed dynamic based. _tokenUriBase + contract address + tokenId
-   * Throws if the token ID does not exist. May return an empty string.
-   * @param token_id uint256 ID of the token to query
-   */
 	  function tokenURI( uint256 token_id) external view returns (string memory) {
 		  return string(
 			  abi.encodePacked(uri, "0x", uintToHexStr(uint256(address(this))), "/0x", uintToHexStr(token_id))
@@ -218,22 +163,18 @@ contract NFT is ERC721Metadata, MerkleVerifier {
    * @param signature bytes The signature used to contract the property for precise proofs
    */
     function _signed(uint256 anchor, bytes32 data_root, bytes memory signature) internal view {
-
       // Get anchored block from anchor ID
     (, , uint32 anchored_block) = anchors.getAnchorById(anchor);
       // Extract the public key and identity address from the signature
       address identity_ = data_root.toEthSignedMessageHash().recover(signature);
       bytes32 pbKey_ = bytes32(uint256(identity_) << 96);
-
       // check that the identity being used has been created by the Centrifuge Identity Factory contract
 			require(identity_factory.createdIdentity(identity_), "Identity is not registered.");
-
       // check that public key has signature purpose on provided identity
 			require(
 				key_manager.keyHasPurpose(pbKey_, SIGNING_PURPOSE),
 				"Signature key is not valid."
 			);
-
       // If key is revoked, anchor must be older the the key revocation
 			(, , uint32 revokedAt_) = key_manager.getKey(pbKey_);
 			if (revokedAt_ > 0) {
