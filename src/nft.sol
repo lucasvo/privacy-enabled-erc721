@@ -24,8 +24,8 @@ contract AnchorLike {
 }
 
 contract KeyManagerLike {
-    function keyHasPurpose(bytes32, uint256) public view returns (bool);
-    function getKey(bytes32) public view returns (bytes32, uint256[] memory, uint32);
+    function keyHasPurpose(bytes32, uint) public view returns (bool);
+    function getKey(bytes32) public view returns (bytes32, uint[] memory, uint32);
 }
 
 contract IdentityFactoryLike {
@@ -53,7 +53,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     bytes constant internal NFTS = hex"0100000000000014";
     // Value of the Signature purpose for an identity. sha256('CENTRIFUGE@SIGNING')
     // solium-disable-next-line
-    uint256 constant internal SIGNING_PURPOSE = 0x774a43710604e3ce8db630136980a6ba5a65b5e6686ee51009ed5f3fded6ea7e;
+    uint constant internal SIGNING_PURPOSE = 0x774a43710604e3ce8db630136980a6ba5a65b5e6686ee51009ed5f3fded6ea7e;
 
     constructor (string memory name, string memory symbol, address anchors_, address identity_, address identity_factory_) ERC721Metadata(name, symbol) public {
         anchors = AnchorLike(anchors_);
@@ -61,7 +61,7 @@ contract NFT is ERC721Metadata, MerkleVerifier {
         identity_factory = IdentityFactoryLike(identity_factory_);
     }
 
-    event Minted(address usr, uint256 tkn);
+    event Minted(address usr, uint tkn);
 
     // --- Utils ---
     function concat(bytes32 b1, bytes32 b2) pure internal returns (bytes memory) {
@@ -74,13 +74,13 @@ contract NFT is ERC721Metadata, MerkleVerifier {
     }
 
      /**
-      * @dev Parses bytes and extracts a uint256 value
+      * @dev Parses bytes and extracts a uint value
       * @param data bytes From where to extract the index
       * @return result the converted address
       */
-     function bytesToUint256(bytes memory data) internal pure returns (uint256) {
+     function bytesToUint(bytes memory data) internal pure returns (uint) {
     	 require(data.length <= 256, "slicing out of range");
-			 return abi.decode(data, (uint256));
+         return abi.decode(data, (uint));
      }
 
      /**
@@ -114,17 +114,17 @@ contract NFT is ERC721Metadata, MerkleVerifier {
        return string(result);
      }
 
-		function equalBytes(bytes memory a, bytes memory b) internal pure returns (bool) {
-				if (a.length == b.length) {
-						for (uint i = 0; i < a.length; i++) {
-								if (a[i] != b[i]) {
+    function equalBytes(bytes memory a, bytes memory b) internal pure returns (bool) {
+        if (a.length == b.length) {
+            for (uint i = 0; i < a.length; i++) {
+                if (a[i] != b[i]) {
                     return false;
-								}
-						}
-				} else {
-			      return false;
-				}
-        return true;
+                } else {
+                    return false;
+                }
+                return true;
+            }
+        }
     }
 
     // --- NFT ---
@@ -138,18 +138,16 @@ contract NFT is ERC721Metadata, MerkleVerifier {
         }
     }
 
-	  function tokenURI( uint256 token_id) external view returns (string memory) {
-		  return string(
-			  abi.encodePacked(uri, "0x", uintToHexStr(uint256(address(this))), "/0x", uintToHexStr(token_id))
-		  );
-	  }
+    function tokenURI( uint token_id) external view returns (string memory) {
+        return string(abi.encodePacked(uri, "0x", uintToHexStr(uint(address(this))), "/0x", uintToHexStr(token_id)));
+    }
 
   /**
    * @dev Checks if the document is the latest version anchored
    * @param data_root bytes32 hash of all invoice fields which is signed
-   * @param next_anchor_id uint256 the next id to be anchored
+   * @param next_anchor_id uint the next id to be anchored
    */
-  function _latestDoc( bytes32 data_root, uint256 next_anchor_id)  internal view returns (bool) {
+  function _latestDoc( bytes32 data_root, uint next_anchor_id)  internal view returns (bool) {
     (, bytes32 next_merkle_root_, ) = anchors.getAnchorById(next_anchor_id);
     return next_merkle_root_ == 0x0;
   }
@@ -158,47 +156,42 @@ contract NFT is ERC721Metadata, MerkleVerifier {
    * @dev Checks that provided document is signed by the given identity
    * and validates and checks if the public key used is a valid SIGNING_KEY.
    * Does not check if the signature root is part of the document root.
-   * @param anchor uint256 anchor ID
+   * @param anchor uint anchor ID
    * @param data_root bytes32 hash of all invoice fields which is signed
    * @param signature bytes The signature used to contract the property for precise proofs
    */
-    function _signed(uint256 anchor, bytes32 data_root, bytes memory signature) internal view {
+    function _signed(uint anchor, bytes32 data_root, bytes memory signature) internal view {
       // Get anchored block from anchor ID
     (, , uint32 anchored_block) = anchors.getAnchorById(anchor);
       // Extract the public key and identity address from the signature
       address identity_ = data_root.toEthSignedMessageHash().recover(signature);
-      bytes32 pbKey_ = bytes32(uint256(identity_) << 96);
+      bytes32 pbKey_ = bytes32(uint(identity_) << 96);
       // check that the identity being used has been created by the Centrifuge Identity Factory contract
-			require(identity_factory.createdIdentity(identity_), "Identity is not registered.");
+      require(identity_factory.createdIdentity(identity_), "Identity is not registered.");
       // check that public key has signature purpose on provided identity
-			require(
-				key_manager.keyHasPurpose(pbKey_, SIGNING_PURPOSE),
-				"Signature key is not valid."
-			);
+      require(key_manager.keyHasPurpose(pbKey_, SIGNING_PURPOSE), "Signature key is not valid.");
       // If key is revoked, anchor must be older the the key revocation
-			(, , uint32 revokedAt_) = key_manager.getKey(pbKey_);
-			if (revokedAt_ > 0) {
-				require(anchored_block < revokedAt_,"Document signed with a revoked key.");
-			}
+      (, , uint32 revokedAt_) = key_manager.getKey(pbKey_);
+      if (revokedAt_ > 0) {
+        require(anchored_block < revokedAt_,"Document signed with a revoked key.");
+      }
     }
 
   /**
    * @dev Checks that the passed in token proof matches the data for minting
-   * @param tkn uint256 The ID for the token to be minted
-   * @param property bytes
-   * @param value bytes
+   * @param tkn uint The ID for the token to be minted
    */
-	  function _tokenData(uint256 tkn, bytes memory property, bytes memory value) internal view returns (bool) {
-      require(bytesToUint256(value) == tkn, "Passed in token ID does not match proof.");
-			return equalBytes(property, abi.encodePacked(NFTS, address(this), hex"000000000000000000000000"));
+    function _tokenData(uint tkn, bytes memory property, bytes memory value) internal view returns (bool) {
+      require(bytesToUint(value) == tkn, "Passed in token ID does not match proof.");
+      return equalBytes(property, abi.encodePacked(NFTS, address(this), hex"000000000000000000000000"));
     }
 
   /**
    * @dev Mints a token to a specified address
    * @param usr address deposit address of token
-   * @param tkn uint256 tokenID
+   * @param tkn uint tokenID
    */
-    function _mint(address usr, uint256 tkn) internal {
+    function _mint(address usr, uint tkn) internal {
         super._mint(usr, tkn);
         emit Minted(usr, tkn);
     }
